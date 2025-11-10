@@ -1,0 +1,220 @@
+<!doctype html>
+
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>© Lyrra-MD</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--muted:#9aa4b2;--accent:#6ee7b7}
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial;background:linear-gradient(180deg,#071029 0%, #071224 100%);color:#e6eef6}
+    header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.03)}
+    header h1{margin:0;font-size:20px;letter-spacing:0.6px}
+    main{max-width:980px;margin:28px auto;padding:18px}
+    .input-row{display:flex;gap:10px}
+    input[type=url]{flex:1;padding:12px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.02);color:inherit}
+    button{padding:11px 14px;border-radius:8px;border:0;background:linear-gradient(90deg,#0ea5a9,#60a5fa);color:#051125;font-weight:600;cursor:pointer}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);margin-top:16px}
+    .meta{display:flex;gap:16px;align-items:center}
+    .thumb{width:160px;height:90px;border-radius:8px;background:#071226;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .thumb img{width:100%;height:100%;object-fit:cover}
+    .info h2{margin:0 0 6px 0;font-size:16px}
+    .info p{margin:0;color:var(--muted);font-size:13px}
+    .medias{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+    .media{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;background:rgba(255,255,255,0.01)}
+    .media small{display:block;color:var(--muted)}
+    .media .actions{margin-left:auto;display:flex;gap:8px}
+    .media a.btn{padding:8px 12px;border-radius:8px;text-decoration:none;color:#05202b;background:linear-gradient(90deg,#b6f0d9,#93c5fd);font-weight:700}
+    .preview-player{margin-top:12px}
+    footer{margin-top:36px;text-align:center;color:var(--muted);font-size:13px}
+    .note{color:var(--muted);font-size:13px;margin-top:10px}
+    .hidden{display:none}
+    .spinner{border:3px solid rgba(255,255,255,0.04);border-left-color:var(--accent);height:18px;width:18px;border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @media (max-width:640px){.thumb{width:120px;height:80px}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>© Lyrra-MD</h1>
+    <div style="font-size:13px;color:var(--muted)">powered by zionjs</div>
+  </header>  <main>
+    <div class="card">
+      <div class="input-row">
+        <input id="urlInput" type="url" placeholder="Masukkan URL (contoh: https://www.tiktok.com/...)" value="" />
+        <button id="startBtn">Start</button>
+      </div>
+      <div id="status" class="note">Masukkan URL lalu tekan <strong>Start</strong></div>
+    </div><div id="resultArea" class="hidden">
+  <div class="card">
+    <div class="meta">
+      <div class="thumb" id="thumbBox"><span id="thumbPlaceholder">No preview</span></div>
+      <div class="info">
+        <h2 id="title">-</h2>
+        <p id="metaText">-</p>
+        <div id="duration" style="margin-top:8px;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <div class="medias" id="medias"></div>
+
+    <div class="preview-player" id="previewPlayer"></div>
+  </div>
+
+  <div class="note">Jika tombol download tidak bekerja, kemungkinan karena CORS atau server tujuan membatasi akses. Solusi: jalankan lewat server/proxy atau simpan URL lalu buka di tab baru.</div>
+</div>
+
+<footer>Zionjs</footer>
+
+  </main>  <script>
+    const startBtn = document.getElementById('startBtn');
+    const urlInput = document.getElementById('urlInput');
+    const status = document.getElementById('status');
+    const resultArea = document.getElementById('resultArea');
+    const thumbBox = document.getElementById('thumbBox');
+    const thumbPlaceholder = document.getElementById('thumbPlaceholder');
+    const titleEl = document.getElementById('title');
+    const metaText = document.getElementById('metaText');
+    const durationEl = document.getElementById('duration');
+    const mediasEl = document.getElementById('medias');
+    const previewPlayer = document.getElementById('previewPlayer');
+
+    function fmtBytes(bytes){if(!bytes && bytes!==0) return '-'; const thresh=1024; if(Math.abs(bytes)<thresh) return bytes+' B'; const units=['KB','MB','GB','TB']; let u=-1; do{bytes/=thresh; ++u}while(Math.abs(bytes)>=thresh && u<units.length-1); return bytes.toFixed(2)+' '+units[u];}
+
+    function findThumbnail(result){
+      if(!result) return null;
+      // common keys
+      if(result.thumbnail) return result.thumbnail;
+      if(result.thumb) return result.thumb;
+      if(result.result && (result.result.thumbnail || result.result.thumb)) return result.result.thumbnail || result.result.thumb;
+      if(result.medias){
+        // sometimes an image-type media exists
+        const img = result.medias.find(m=>m.type==='image' || (m.extension && ['jpg','jpeg','png','webp'].includes((m.extension||'').toLowerCase())));
+        if(img) return img.url || null;
+      }
+      return null;
+    }
+
+    function clearResult(){
+      resultArea.classList.add('hidden');
+      mediasEl.innerHTML='';
+      previewPlayer.innerHTML='';
+      thumbBox.innerHTML='';
+      titleEl.textContent='-';
+      metaText.textContent='-';
+      durationEl.textContent='';
+    }
+
+    async function fetchData(userUrl){
+      const api = 'https://api.deline.web.id/downloader/aio?url=' + encodeURIComponent(userUrl);
+      status.innerHTML = 'Mengambil data dari API... <span class="spinner"></span>';
+      try{
+        const res = await fetch(api);
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        if(!j || j.status===false || j.error) throw new Error('API mengembalikan error');
+        return j.result || j;
+      }catch(err){
+        throw err;
+      }finally{
+        status.innerHTML = '';
+      }
+    }
+
+    function createDownloadLink(url, filename){
+      // Use direct link; if CORS blocks streaming, user can open in new tab
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.className = 'btn';
+      a.textContent = 'Download';
+      a.setAttribute('download', filename || 'file');
+      return a;
+    }
+
+    function renderResult(result, originalUrl){
+      resultArea.classList.remove('hidden');
+      // Title / meta
+      titleEl.textContent = result.title || result.id || 'No title';
+      const author = result.author || result.creator || '';
+      metaText.textContent = (result.source? ('Source: ' + result.source + (author? ' • ' + author : '')) : (author? 'Author: ' + author : ''));
+      if(result.duration) durationEl.textContent = 'Duration: ' + result.duration + 's';
+
+      // Thumbnail
+      const thumb = findThumbnail(result) || result.thumbnail || result.thumb || '';
+      thumbBox.innerHTML = '';
+      if(thumb){
+        const img = document.createElement('img'); img.src = thumb; img.alt='thumbnail';
+        img.onerror = ()=>{thumbBox.textContent='Preview tidak tersedia'};
+        thumbBox.appendChild(img);
+      } else {
+        thumbBox.textContent = 'No preview';
+      }
+
+      // Medias
+      mediasEl.innerHTML='';
+      const medias = Array.isArray(result.medias)? result.medias : (result.result && Array.isArray(result.result.medias)? result.result.medias : []);
+      if(!medias || medias.length===0){
+        mediasEl.innerHTML = '<div class="note">Tidak ada media yang ditemukan.</div>';
+        return;
+      }
+
+      medias.forEach((m, idx)=>{
+        const row = document.createElement('div'); row.className='media';
+        const info = document.createElement('div');
+        info.innerHTML = `<strong>${(m.quality||m.type||'file').toString()}</strong> <small>${(m.extension?'.'+m.extension:'')} • ${fmtBytes(m.data_size)}</small>`;
+        row.appendChild(info);
+
+        const actions = document.createElement('div'); actions.className='actions';
+        // Preview button (if playable)
+        if(m.type && (m.type==='video' || (m.extension && ['mp4','webm','mkv'].includes((m.extension||'').toLowerCase())))){
+          const prev = document.createElement('button'); prev.textContent='Preview'; prev.style.padding='8px 10px'; prev.style.borderRadius='8px'; prev.style.border='0'; prev.style.cursor='pointer';
+          prev.onclick = ()=>{
+            previewPlayer.innerHTML = '';
+            const vid = document.createElement('video'); vid.controls = true; vid.src = m.url; vid.style.maxWidth='100%'; vid.style.borderRadius='8px'; previewPlayer.appendChild(vid);
+            vid.scrollIntoView({behavior:'smooth'});
+          }
+          actions.appendChild(prev);
+        }
+        if(m.type && m.type==='audio' || (m.extension && ['mp3','aac','m4a','wav','ogg'].includes((m.extension||'').toLowerCase()))){
+          const prevA = document.createElement('button'); prevA.textContent='Preview'; prevA.style.padding='8px 10px'; prevA.style.borderRadius='8px'; prevA.style.border='0'; prevA.style.cursor='pointer';
+          prevA.onclick = ()=>{
+            previewPlayer.innerHTML = '';
+            const ad = document.createElement('audio'); ad.controls = true; ad.src = m.url; ad.style.width='100%'; previewPlayer.appendChild(ad);
+            ad.scrollIntoView({behavior:'smooth'});
+          }
+          actions.appendChild(prevA);
+        }
+
+        // Download link
+        const filename = (result.title || 'download') + '_' + (idx+1) + (m.extension?'.'+m.extension:'');
+        const dl = createDownloadLink(m.url || m.link || originalUrl, filename);
+        actions.appendChild(dl);
+
+        row.appendChild(actions);
+        mediasEl.appendChild(row);
+      });
+    }
+
+    startBtn.addEventListener('click', async ()=>{
+      const u = urlInput.value.trim();
+      if(!u){
+        status.textContent = 'Masukkan URL valid.'; return;
+      }
+      clearResult();
+      try{
+        status.innerHTML = 'Menghubungi API... <span class="spinner"></span>';
+        const r = await fetchData(u);
+        status.textContent = 'Sukses mendapatkan data.';
+        renderResult(r, u);
+      }catch(err){
+        console.error(err);
+        status.textContent = 'Gagal: ' + (err.message || err);
+      }
+    });
+
+    // allow enter to submit
+    urlInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') startBtn.click(); });
+  </script></body>
+</html>
